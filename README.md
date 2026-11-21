@@ -1,9 +1,9 @@
 # ⚡ Gemini5.0 Proxy
 
 > **“天道崩塌，谷狗封杀，我自一剑破之。”**  
-> 将 Google AI Mode 无缝转化为高并发、多租户、自带 **Vue 3 实时监控大盘** 的 **OpenAI 兼容 API 网关**。
+> **一句话读懂本项目**：由于常规渠道封号、锁区严格，本项目另辟蹊径，**利用谷歌搜索引擎内置的 AI 问答特殊渠道（Google Search AI Mode）**——无需登录 Google 账号、无需申请官方 API Key、无需绑卡付费，直接将其转化为高并发、多租户、自带联网搜索能力的 **标准 OpenAI 兼容接口（模型名：`Gemini5.0`）**，并配备 **Vue 3 实时监控控制台**。
 
-`Python 3.10+` · `FastAPI Async` · `Vue 3 + Vite` · `OpenAI Protocol Compatible` · `Model: Gemini5.0`
+`Python 3.10+` · `FastAPI Async` · `Vue 3 + Vite` · `OpenAI Protocol Compatible` · `免账号 / 自带联网搜索`
 
 ---
 
@@ -12,6 +12,16 @@
 | 🏆 首席赞助商 | 官方直达地址 | 简介 |
 | :---: | :---: | :--- |
 | **💎 跃数AI** | **[https://ys666.site](https://ys666.site)** | **本项目由 [跃数AI (ys666.site)](https://ys666.site) 独家赞助支持** —— 稳定、高速、低延迟的一站式 AI 大模型 API 与算力服务平台，开箱即用，欢迎体验！ |
+
+---
+
+## 💡 它是怎么做到的？（大白话版）
+
+现在很多开发者想用 Gemini，但要么**申请不到 API Key / 绑不了海外信用卡**，要么**Google 账号一登录网页版就被封号或提示地区不支持**。
+
+本项目走了一条完全不同的**特殊渠道**：
+1. **借道谷歌搜索引擎内置 AI 接口**：直接通过无头浏览器池访问谷歌搜索的 AI 对话入口（`udm=50` 搜索 AI 渠道），**全程不需要登录任何 Google 账号（零封号风险）**，而且回答天生自带**谷歌实时联网搜索能力**。
+2. **包装成标准 OpenAI 接口**：后台帮你把浏览器池、排队、指纹保活全干完了，对外只暴露一个标准的 OpenAI `/v1/chat/completions` 接口（模型名填 `Gemini5.0`）。你平时怎么调 ChatGPT / DeepSeek，现在就怎么调它。
 
 ---
 
