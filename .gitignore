@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+.venv/
+data/
+states/
+proxy_svc/data/
+proxy_svc/states/
+web/node_modules/
+web/dist/
+_*.py
+*.log
+.DS_Store
+Thumbs.db

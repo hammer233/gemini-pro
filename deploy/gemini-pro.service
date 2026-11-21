@@ -1,0 +1,20 @@
+[Unit]
+Description=Google AI Mode proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/gemini-pro
+EnvironmentFile=/opt/gemini-pro/proxy.env
+ExecStart=/bin/sh -c 'exec /opt/gemini-pro/venv/bin/python -m uvicorn proxy_svc.app:app --host ${HOST:-0.0.0.0} --port ${PORT:-8080} --workers 1'
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+# 独占 4GB + 1.45GB Swap 服务器，放开 cgroup 内存上限，由池内 350MB 动态背压保护
+MemoryHigh=3200M
+MemoryMax=3600M
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
