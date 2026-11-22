@@ -16,6 +16,12 @@
 
 ---
 
+> [!NOTE]
+> **加固版**：基于 [Lappercn/gemini-pro](https://github.com/Lappercn/gemini-pro) 修复启动即报错（缺失 `__init__.py`）等缺陷，默认强制鉴权并收紧部署权限，新增 `deploy/install.sh` 一键部署。完整审计与改动清单见 [docs/AUDIT.md](docs/AUDIT.md)。上游未附带开源许可证，使用与再分发请自行评估。
+
+> [!WARNING]
+> **使用风险**：本项目通过无头浏览器与打码服务调用 Google 搜索 AI 模式，可能违反 Google 服务条款，出口 IP 可能被限流或封禁，服务也可能随页面改版失效。提问内容会发送给 Google，请勿提交个人隐私、患者信息或机密数据。
+
 ## 💡 一句话讲清楚：它是怎么实现的？
 
 > [!TIP]
@@ -27,7 +33,7 @@
 
 | 对比维度 | 传统官方 API 渠道 | 普通网页版登录反代 | ⚡ 本项目（谷歌搜索 AI 特殊渠道） |
 | :--- | :---: | :---: | :---: |
-| **是否需要 Google 账号** | 需要（且需绑海外卡） | 需要（高频封号/掉登录） | **🟢 完全免账号（零封号风险）** |
+| **是否需要 Google 账号** | 需要（且需绑海外卡） | 需要（高频封号/掉登录） | **🟢 免 Google 账号（无账号可封，但出口 IP 可能被风控）** |
 | **实时联网搜索能力** | 需额外付费开启 Grounding | 依赖页面状态 | **🟢 原生自带谷歌实时全网搜索** |
 | **客户端调用协议** | Google 私有格式 | 各家自定义格式 | **🟢 标准 OpenAI `/v1/chat/completions`** |
 | **单次响应速度 (热实例)** | ~1.5s | 8s ~ 20s | **🟢 实测 2.07s ~ 2.89s (极速直连)** |
@@ -58,8 +64,8 @@
 
 | 配置项 | 填写内容 |
 | :--- | :--- |
-| **API Base URL** | `http://<你的服务器IP>:8080/v1` |
-| **API Key** | 控制台生成的 `sk-...`（未开启鉴权时随便填任意字符即可） |
+| **API Base URL** | `https://<你的域名>/v1`（用 `--public` 直连时为 `http://<服务器IP>:8080/v1`） |
+| **API Key** | 部署脚本输出的 API Key（服务默认强制鉴权，未配置密钥时所有接口返回 503） |
 | **Model 模型名** | **`Gemini5.0`**（同时兼容 `google-ai-mode`） |
 
 ### 1️⃣ cURL 直接调用
@@ -85,7 +91,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://127.0.0.1:8080/v1",
-    api_key="sk-your-key",  # 未开启鉴权时可任意填写
+    api_key="sk-your-key",  # 部署时生成或配置的 API Key
 )
 
 resp = client.chat.completions.create(
@@ -131,34 +137,35 @@ flowchart LR
 
 ## 🛠️ 安装与部署指南
 
-### 1. 一键安装依赖（Ubuntu 22.04 / 24.04）
+### 1. 一键部署（推荐，Ubuntu 22.04 / 24.04）
 
 ```bash
-# 1. 安装 Google Chrome 与 libatomic1 等系统依赖
-bash deploy/install_chrome.sh
-
-# 2. 创建 Python 虚拟环境并安装依赖
-python3 -m venv venv
-./venv/bin/pip install --upgrade pip
-./venv/bin/pip install -r requirements.txt tiktoken
+git clone https://github.com/hammer233/gemini-pro.git && cd gemini-pro
+sudo bash deploy/install.sh --domain api.example.com
 ```
 
-### 2. 配置并启动服务
+没有域名时：`sudo bash deploy/install.sh`（只监听本机，用 SSH 隧道访问）或 `--public`（对外明文 HTTP，仅限可信网络）。
+
+脚本会安装 Chrome 与依赖、创建低权限用户 `geminipro`、自动生成随机 API Key、写入带沙箱与内存上限的 systemd 服务、可选用 Caddy 自动签发 HTTPS，并在结束前做鉴权自检。更新用 `--update`，卸载用 `--uninstall [--purge]`，全部选项见 `sudo bash deploy/install.sh --help`。
+
+### 2. 手动安装
 
 ```bash
+sudo bash deploy/install_chrome.sh
+python3 -m venv venv
+./venv/bin/pip install --upgrade pip
+./venv/bin/pip install -r requirements.txt
 cp proxy_svc/.env.example .env
-# 按需编辑 .env，然后启动服务
-./venv/bin/python -m uvicorn proxy_svc.app:app --host 0.0.0.0 --port 8080 --workers 1
+# 编辑 .env：必须设置 API_KEY 与 YES_KEY（BACKEND=mock 时不需要 YES_KEY）
+source venv/bin/activate
+bash proxy_svc/run.sh   # 会先加载 .env 再启动；Python 代码本身不读取 .env
 ```
 
 > [!IMPORTANT]
-> **生产环境后台常驻（systemd）**：
-> ```bash
-> cp deploy/proxy.env /opt/gemini-pro/proxy.env
-> cp deploy/gemini-pro.service /etc/systemd/system/gemini-pro.service
-> systemctl daemon-reload && systemctl enable --now gemini-pro
-> ```
-> 启动后浏览器打开 **`http://<服务器IP>:8080/`** 即可进入 **Vue 3 控制台**。
+> **安全默认值**：未配置 `API_KEY` / `USERS` 时所有接口返回 503；`/admin/bootstrap` 默认关闭；`/health` 对匿名访问只返回精简信息。
+> 仅在本机调试时才设 `ALLOW_NO_AUTH=1`；需要用面板首次生成管理员密钥时才临时设 `ALLOW_BOOTSTRAP=1`。`MAX_BODY_BYTES`（默认 8MB）限制请求体大小，`METRICS_PREVIEW_CHARS=0` 可让统计不保存提问内容。
+
+启动后用 SSH 隧道或你的域名打开 **`/`** 即可进入 **Vue 3 控制台**，在页面中填入 API Key。
 
 <details>
 <summary><b>📋 点击展开：完整 HTTP API 接口列表与目录结构</b></summary>
@@ -195,8 +202,9 @@ cp proxy_svc/.env.example .env
 │   ├── core/               # 调度内核 (FairQueue / Pool / SoakRunner / Tokens / Sysinfo)
 │   └── static/             # Vue 3 打包产物（开箱即用）
 ├── web/                    # Vue 3 + Vite 控制台前端源码
-├── deploy/                 # systemd 服务配置、Chrome 安装脚本与部署工具
-└── docs/                   # README 矢量横幅与实测截图资源
+├── deploy/                 # 一键部署脚本 install.sh、systemd 服务、Caddy 与环境变量示例
+├── tests/                  # mock 后端冒烟测试（python -m unittest discover -s tests -v）
+└── docs/                   # 审计记录 AUDIT.md、README 横幅与实测截图资源
 ```
 
 </details>
