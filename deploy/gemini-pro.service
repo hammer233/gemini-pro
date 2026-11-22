@@ -11,7 +11,7 @@ WorkingDirectory=/opt/gemini-pro
 EnvironmentFile=/etc/gemini-pro/proxy.env
 Environment=HOME=/var/lib/gemini-pro/home
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/bin/sh -c 'exec /opt/gemini-pro/venv/bin/python -m uvicorn proxy_svc.app:app --host "$${HOST:-127.0.0.1}" --port "$${PORT:-8080}" --workers 1'
+ExecStart=/bin/sh -c 'exec /opt/gemini-pro/venv/bin/python -m uvicorn proxy_svc.app:app --host "$${HOST:-127.0.0.1}" --port "$${PORT:-8888}" --workers 1'
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
