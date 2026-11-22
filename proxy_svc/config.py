@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
 import threading
 import time
 from dataclasses import dataclass, field
+
+log = logging.getLogger("config")
 
 
 def machine_capacity(reserve_mb: int = 500, per_browser_mb: int = 280,
@@ -266,10 +269,20 @@ class Config:
     soak_max_concurrency: int = field(default_factory=lambda: _i(
         "SOAK_MAX_CONCURRENCY", 64))
 
+    # ---- 安全开关 ----
+    # 未配置任何密钥时默认拒绝服务；ALLOW_NO_AUTH=1 才允许无鉴权运行（仅限本机/内网调试）
+    allow_no_auth: bool = field(default_factory=lambda: _b("ALLOW_NO_AUTH", False))
+    # /admin/bootstrap 会向任何访问者签发管理员密钥，默认关闭
+    allow_bootstrap: bool = field(
+        default_factory=lambda: _b("ALLOW_BOOTSTRAP", False))
+    max_body_bytes: int = field(
+        default_factory=lambda: _i("MAX_BODY_BYTES", 8 * 1024 * 1024))
+
     # ---- 派生（__post_init__ 填充）----
     tenants: dict[str, TenantCfg] = field(default_factory=dict)
     default_user: str = "public"
     _lock: threading.RLock = field(default_factory=threading.RLock)
+    _auto_default: bool = False
 
     def __post_init__(self):
         self.capacity = machine_capacity()
@@ -290,6 +303,7 @@ class Config:
             self.tenants = {uid: TenantCfg(uid, self.api_key,
                                            max(1, self.max_workers),
                                            max(1, self.queue_limit))}
+            self._auto_default = True
         self.default_user = next(iter(self.tenants))
 
     # ---- 身份解析 ----
@@ -301,11 +315,14 @@ class Config:
         """密钥 -> (user_id, 是否管理员)。None 表示密钥无效/未提供。"""
         if not key:
             return None
-        for t in self.tenants.values():
-            if t.key and hmac.compare_digest(t.key, key):
-                return (t.user_id, False)
-        if self.api_key and hmac.compare_digest(self.api_key, key):
+        probe = key.encode("utf-8", "replace")
+        if self.api_key and hmac.compare_digest(
+                self.api_key.encode("utf-8"), probe):
             return (self.default_user, True)
+        for t in self.tenants.values():
+            if (t.key and not t.disabled
+                    and hmac.compare_digest(t.key.encode("utf-8"), probe)):
+                return (t.user_id, False)
         return None
 
     def tenant(self, user_id: str) -> TenantCfg:
@@ -336,7 +353,7 @@ class Config:
                 if t.key in keys:
                     errs.append(f"USERS 密钥重复: {t.user_id} 与 {keys[t.key]}")
                 keys[t.key] = t.user_id
-        if self.api_key and self.api_key in keys:
+        if self.api_key and not self._auto_default and self.api_key in keys:
             errs.append("API_KEY 与某个 USERS 密钥重复")
         return errs
 
@@ -357,7 +374,10 @@ class Config:
         if not isinstance(data, dict):
             return
         with self._lock:
-            self._apply_store(data)
+            try:
+                self._apply_store(data)
+            except Exception as e:
+                log.error("settings.json 内容无法解析，已忽略: %s", e)
 
     def _apply_store(self, data: dict) -> None:
         users = data.get("users")
@@ -380,7 +400,9 @@ class Config:
             if parsed:
                 self.tenants = parsed
                 self.default_user = next(iter(parsed))
-        if isinstance(data.get("api_key"), str) and data["api_key"]:
+                self._auto_default = False
+        if (isinstance(data.get("api_key"), str) and data["api_key"]
+                and not self.api_key):
             self.api_key = data["api_key"]
         self._apply_limits(data)
 
@@ -466,13 +488,18 @@ class Config:
 
     def save_store(self) -> None:
         os.makedirs(self.data_dir, exist_ok=True)
-        data = {"api_key": self.api_key,
+        data = {"api_key": "" if os.environ.get("API_KEY") else self.api_key,
                 "users": [t.full() for t in self.tenants.values() if t.key]}
         for k in self._PERSIST:
             v = getattr(self, k)
             data[k] = list(v) if isinstance(v, tuple) else v
         tmp = self._store_path() + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp, self._store_path())
 
