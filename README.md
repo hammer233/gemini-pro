@@ -203,11 +203,18 @@ cp proxy_svc/.env.example .env
 
 ---
 
+## 🔗 友情链接 (Friendly Links)
+
+- **[🐧 LINUX DO 社区 (https://linux.do)](https://linux.do)** —— 真诚、友善、团结、专业，共建你我引以为荣之技术社区。
+- **[💎 跃数AI (https://ys666.site)](https://ys666.site)** —— 稳定、高速的一站式企业级大模型 API 与算力服务平台。
+
+---
+
 <div align="center">
 
 ### 🤝 赞助与鸣谢
 
-感谢 **[💎 跃数AI (https://ys666.site)](https://ys666.site)** 对本开源项目提供算力与研发赞助支持！  
+感谢 **[💎 跃数AI (https://ys666.site)](https://ys666.site)** 对本开源项目提供算力与研发赞助支持，感谢 **[🐧 LINUX DO](https://linux.do)** 社区各位佬友的交流与反馈！  
 如果本项目对你有帮助，欢迎点一个 ⭐ **Star** 支持！
 
 </div>
