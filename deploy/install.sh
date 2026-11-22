@@ -23,7 +23,7 @@ DEFAULT_REPO="https://github.com/hammer233/gemini-pro.git"
 REPO_URL="${REPO_URL:-}"
 BRANCH="${BRANCH:-main}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
-PORT="${PORT:-8080}"
+PORT="${PORT:-8888}"
 DOMAIN="${DOMAIN:-}"
 API_KEY="${API_KEY:-}"
 YES_KEY="${YES_KEY:-}"
@@ -62,7 +62,7 @@ usage() {
 
   --domain 域名        用 Caddy 反代并自动申请 HTTPS 证书（域名需已解析到本机，开放 80/443）
   --public             不用域名，直接对外监听 0.0.0.0:端口（明文 HTTP，仅在可信网络使用）
-  --port N             内部服务端口，默认 8080
+  --port N             内部服务端口，默认 8888
   --api-key KEY        管理员/调用密钥；不填则自动生成并保存
   --yes-key KEY        YesCaptcha 客户端密钥；不填会在交互终端中询问
   --egress-proxy URL   服务出网代理，如 http://127.0.0.1:7897
@@ -385,6 +385,12 @@ port_in_use() {
   ss -ltnH "( sport = :$1 )" 2>/dev/null | grep -q .
 }
 
+check_port_free() {
+  if port_in_use "$PORT" && ! systemctl is-active --quiet "$APP_NAME"; then
+    die "端口 ${PORT} 已被其它程序占用（查看: ss -ltnp | grep :${PORT}），请换一个: --port N"
+  fi
+}
+
 setup_caddy() {
   [ -n "$DOMAIN" ] || return 0
   info "配置 Caddy 反向代理与 HTTPS (${DOMAIN})"
@@ -564,7 +570,7 @@ main() {
   if [ "$ACTION" = "update" ]; then
     [ -f "$ENV_FILE" ] || die "没有找到 ${ENV_FILE}，请先完整安装"
     API_KEY="$(env_get API_KEY)"
-    PORT="$(env_get PORT)"; PORT="${PORT:-8080}"
+    PORT="$(env_get PORT)"; PORT="${PORT:-8888}"
     BACKEND_MODE="$(env_get BACKEND)"; BACKEND_MODE="${BACKEND_MODE:-browser}"
     ensure_user
     fetch_source
@@ -576,6 +582,7 @@ main() {
     exit 0
   fi
 
+  check_port_free
   install_packages
   ensure_swap
   ensure_user
