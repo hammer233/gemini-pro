@@ -64,14 +64,14 @@
 
 | 配置项 | 填写内容 |
 | :--- | :--- |
-| **API Base URL** | `https://<你的域名>/v1`（用 `--public` 直连时为 `http://<服务器IP>:8080/v1`） |
+| **API Base URL** | `https://<你的域名>/v1`（用 `--public` 直连时为 `http://<服务器IP>:8888/v1`） |
 | **API Key** | 部署脚本输出的 API Key（服务默认强制鉴权，未配置密钥时所有接口返回 503） |
 | **Model 模型名** | **`Gemini5.0`**（同时兼容 `google-ai-mode`） |
 
 ### 1️⃣ cURL 直接调用
 
 ```bash
-curl -X POST http://127.0.0.1:8080/v1/chat/completions \
+curl -X POST http://127.0.0.1:8888/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sk-your-key" \
   -d '{
@@ -90,7 +90,7 @@ curl -X POST http://127.0.0.1:8080/v1/chat/completions \
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://127.0.0.1:8080/v1",
+    base_url="http://127.0.0.1:8888/v1",
     api_key="sk-your-key",  # 部署时生成或配置的 API Key
 )
 
