@@ -32,6 +32,7 @@ import asyncio
 import ipaddress
 import json
 import logging
+import math
 import os
 import time
 import uuid
@@ -134,6 +135,13 @@ async def lifespan(app: FastAPI):
     errs = CFG.validate()
     if errs:
         log.error("配置错误: %s", "; ".join(errs))
+    if not CFG.auth_enabled:
+        if CFG.allow_no_auth:
+            log.warning("ALLOW_NO_AUTH=1：当前无任何鉴权，任何能访问端口的人都是管理员，"
+                        "切勿暴露到公网")
+        else:
+            log.error("未配置 API_KEY/USERS：所有接口将返回 503。"
+                      "请设置 API_KEY（或仅在本机调试时设 ALLOW_NO_AUTH=1）")
     METRICS = Metrics(CFG.data_dir, CFG.metrics_preview_chars)
     METRICS.start()
     POOL = make_pool(CFG, name="main")
@@ -155,6 +163,31 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Gemini5.0 Proxy", lifespan=lifespan)
+
+
+class BodyLimitMiddleware:
+    """按 Content-Length 拒绝过大的请求体，避免内存被大包撑爆。"""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            for name, value in scope["headers"]:
+                if name == b"content-length":
+                    try:
+                        too_big = int(value) > CFG.max_body_bytes
+                    except ValueError:
+                        too_big = True
+                    if too_big:
+                        resp = JSONResponse(
+                            {"detail": "request body too large"}, status_code=413)
+                        await resp(scope, receive, send)
+                        return
+        await self.inner(scope, receive, send)
+
+
+app.add_middleware(BodyLimitMiddleware)
 _STATIC = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(_STATIC):
     app.mount("/panel", StaticFiles(directory=_STATIC, html=True),
@@ -163,9 +196,13 @@ if os.path.isdir(_STATIC):
 
 @app.get("/assets/{asset_path:path}")
 def panel_asset(asset_path: str):
-    target = os.path.normpath(os.path.join(_STATIC, "assets", asset_path))
     assets_root = os.path.normpath(os.path.join(_STATIC, "assets"))
-    if not target.startswith(assets_root) or not os.path.isfile(target):
+    target = os.path.normpath(os.path.join(assets_root, asset_path))
+    try:
+        inside = os.path.commonpath([assets_root, target]) == assets_root
+    except ValueError:
+        inside = False
+    if not inside or not os.path.isfile(target):
         raise HTTPException(404, "asset not found")
     return FileResponse(target)
 
@@ -181,7 +218,7 @@ def panel_index():
 class AskIn(BaseModel):
     question: str = Field(min_length=1, max_length=60000)
     fresh: bool = True
-    timeout: float | None = None
+    timeout: float | None = Field(default=None, gt=0, le=600)
     wait: bool = True
     user_id: str | None = None      # 仅管理员可用：代某租户发起
 
@@ -189,7 +226,7 @@ class AskIn(BaseModel):
 class BatchIn(BaseModel):
     questions: list[str] = Field(min_length=1, max_length=64)
     fresh: bool = True
-    timeout: float | None = None
+    timeout: float | None = Field(default=None, gt=0, le=600)
     user_id: str | None = None      # 仅管理员可用
 
 
@@ -267,6 +304,10 @@ def _ident(key: str | None,
            request: Request | None = None) -> tuple[str, bool]:
     """校验密钥，返回 (user_id, 是否管理员)。鉴权未开启时放开。"""
     if not CFG.auth_enabled:
+        if not CFG.allow_no_auth:
+            raise HTTPException(
+                503, "auth is not configured: set API_KEY "
+                     "(ALLOW_NO_AUTH=1 only for local debugging)")
         return (CFG.default_user, True)
     who = CFG.whois(key)
     if who is None:
@@ -306,6 +347,22 @@ def _pick_user(who: tuple[str, bool], asked: str | None) -> str:
     return uid
 
 
+def _openai_user(who: tuple[str, bool], asked) -> str:
+    """OpenAI 的 user 字段只是终端用户标识，客户端常会带上；只有管理员指向已存在租户时才生效。"""
+    uid, admin = who
+    if admin and isinstance(asked, str) and asked in CFG.tenants:
+        return asked
+    return uid
+
+
+def _safe_timeout(value) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value) or value <= 0:
+        return None
+    return min(float(value), 600.0)
+
+
 async def _submit_one(question: str, *, fresh: bool, user_id: str,
                       wait: bool, timeout: float | None,
                       request: Request | None, endpoint: str) -> dict:
@@ -331,9 +388,26 @@ async def _submit_one(question: str, *, fresh: bool, user_id: str,
 
 
 @app.get("/health")
-def health():
+def health(request: Request,
+           x_api_key: str | None = Header(default=None),
+           authorization: str | None = Header(default=None)):
     assert POOL
     s = POOL.stats(tenants=CFG.tenants)
+    basic = {
+        "ok": True,
+        "backend": CFG.backend,
+        "auth": CFG.auth_enabled,
+        "workers": s["workers"],
+        "busy": s["busy"],
+        "queued": s["queued"],
+        "paused": s["paused"],
+    }
+    if CFG.auth_enabled:
+        who = CFG.whois(_extract_key(request, x_api_key, authorization))
+        if who is None or not who[1]:
+            return basic
+    elif not CFG.allow_no_auth:
+        return basic
     return {
         "ok": True,
         "headless": CFG.headless,
@@ -395,6 +469,9 @@ async def ask_batch(body: BatchIn, request: Request,
                     authorization: str | None = Header(default=None)):
     who = _ident(_extract_key(request, x_api_key, authorization), request)
     uid = _pick_user(who, body.user_id)
+    for q in body.questions:
+        if not q.strip() or len(q) > 60000:
+            raise HTTPException(400, "each question must be 1-60000 chars")
     coros = [
         _submit_one(
             q,
@@ -559,19 +636,11 @@ async def openai_chat(request: Request,
     if len(question) > 60000:
         return _openai_error(400, "messages too long", "context_length_exceeded")
 
-    asked = body.get("user")
-    if asked is not None and not isinstance(asked, str):
-        return _openai_error(400, "user must be a string", "invalid_user")
-    try:
-        uid = _pick_user(who, asked or None)
-    except HTTPException as e:
-        code = "invalid_user" if e.status_code == 404 else "insufficient_quota"
-        return _openai_error(e.status_code, str(e.detail), code)
+    uid = _openai_user(who, body.get("user"))
 
     # OpenAI 协议调用默认无状态 fresh=True（每次直接 goto，不与前序请求串上下文）
     fresh = bool(body.get("fresh", True))
-    timeout = body.get("timeout")
-    timeout = float(timeout) if isinstance(timeout, (int, float)) else None
+    timeout = _safe_timeout(body.get("timeout"))
     t0 = time.time()
     cmpl_id = "chatcmpl-" + uuid.uuid4().hex[:24]
     model_name = body.get("model") or MODEL_ID
@@ -713,7 +782,11 @@ async def admin_settings_update(request: Request,
 
 @app.post("/admin/bootstrap")
 def admin_bootstrap():
-    """只在还没有密钥时可用，用来生成第一个管理员密钥。"""
+    """只在还没有密钥且显式开启 ALLOW_BOOTSTRAP=1 时可用，用来生成第一个管理员密钥。"""
+    if not CFG.allow_bootstrap:
+        raise HTTPException(
+            403, "bootstrap disabled: set API_KEY in the environment "
+                 "(or ALLOW_BOOTSTRAP=1 temporarily)")
     if CFG.auth_enabled:
         raise HTTPException(409, "管理员密钥已存在，请用它登录")
     return {"api_key": CFG.bootstrap_admin(), "role": "admin"}
