@@ -58,7 +58,7 @@ FastAPI 网关把 OpenAI `/v1/chat/completions` 请求放进按租户轮转的�
 
 - 规格：x86_64，Ubuntu 22.04 / 24.04。2 核 4GB 较合适；2GB 可运行，需要 swap 并把并发控制在 2 以内；磁盘 10GB 以上。
 - 网络：服务器需能直连 Google。数据中心 IP 更容易被要求验证码，可用 `EGRESS_PROXY` 指定更干净的出口。
-- 暴露面：只开放 443（Caddy 反代），内部端口 8080 仅监听本机。云厂商防火墙需另行放行。
+- 暴露面：只开放 443（Caddy 反代），内部端口默认 8888，仅监听本机，可用 `--port` 修改（8888 也是宝塔面板、Jupyter 的默认端口，被占用时安装脚本会直接报错）。云厂商防火墙需另行放行。
 - 成本：YesCaptcha 按次计费，遇到验证码才会消耗。
 - 运维：日志用 `journalctl -u gemini-pro`，备份 `/var/lib/gemini-pro`，更新用 `install.sh --update`。
 
