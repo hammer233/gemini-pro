@@ -11,7 +11,7 @@ if [ -f .env ]; then
   set +a
 fi
 
-if [ -z "${YES_KEY:-}" ]; then
+if [ "${BACKEND:-browser}" = "browser" ] && [ -z "${YES_KEY:-}" ]; then
   echo "错误: 未设置 YES_KEY（YesCaptcha 客户端密钥）" >&2
   exit 1
 fi
