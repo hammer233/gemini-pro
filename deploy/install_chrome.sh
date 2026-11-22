@@ -1,5 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+if [ "$(uname -m)" != "x86_64" ]; then
+  echo "Google Chrome 官方 deb 仅提供 x86_64；其它架构请改用 playwright install chromium" >&2
+  exit 1
+fi
+DEBIAN_FRONTEND=noninteractive apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y libatomic1
 if [ -x /usr/bin/google-chrome-stable ]; then
   echo "chrome already installed"
