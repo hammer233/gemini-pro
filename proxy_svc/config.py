@@ -178,7 +178,7 @@ def _parse_tenants(raw: str, max_workers: int,
 class Config:
     # ---- 服务监听 ----
     host: str = field(default_factory=lambda: os.environ.get("HOST", "0.0.0.0"))
-    port: int = field(default_factory=lambda: _i("PORT", 8080))
+    port: int = field(default_factory=lambda: _i("PORT", 8888))
     api_key: str = field(default_factory=lambda: os.environ.get("API_KEY", ""))
 
     # ---- 多租户（用户:密钥:并发:排队）----
