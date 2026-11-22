@@ -1,20 +1,33 @@
 [Unit]
-Description=Google AI Mode proxy
+Description=Gemini5.0 OpenAI-compatible proxy (Google AI Mode)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
+User=geminipro
+Group=geminipro
 WorkingDirectory=/opt/gemini-pro
-EnvironmentFile=/opt/gemini-pro/proxy.env
-ExecStart=/bin/sh -c 'exec /opt/gemini-pro/venv/bin/python -m uvicorn proxy_svc.app:app --host ${HOST:-0.0.0.0} --port ${PORT:-8080} --workers 1'
+EnvironmentFile=/etc/gemini-pro/proxy.env
+Environment=HOME=/var/lib/gemini-pro/home
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/sh -c 'exec /opt/gemini-pro/venv/bin/python -m uvicorn proxy_svc.app:app --host "$${HOST:-127.0.0.1}" --port "$${PORT:-8080}" --workers 1'
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
-# 独占 4GB + 1.45GB Swap 服务器，放开 cgroup 内存上限，由池内 350MB 动态背压保护
-MemoryHigh=3200M
-MemoryMax=3600M
+LimitNOFILE=65535
+UMask=0077
 NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gemini-pro
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target
