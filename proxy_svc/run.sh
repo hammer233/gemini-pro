@@ -23,6 +23,6 @@ fi
 
 exec python -m uvicorn proxy_svc.app:app \
   --host "${HOST:-0.0.0.0}" \
-  --port "${PORT:-8080}" \
+  --port "${PORT:-8888}" \
   --workers 1 \
   --log-level "${LOG_LEVEL:-info}"
